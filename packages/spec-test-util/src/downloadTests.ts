@@ -7,14 +7,14 @@ import {promisify} from "node:util";
 import {rimraf} from "rimraf";
 import {fetch, retry} from "@lodestar/utils";
 
-export const defaultSpecTestsRepoUrl = "https://github.com/ethereum/consensus-spec-tests";
+export const defaultSpecTestsRepoUrl = "https://github.com/ethereum/consensus-specs";
 
 const logEmpty = (): void => {};
 
 export type DownloadTestsOptions = {
   specVersion: string;
   outputDir: string;
-  /** Root Github URL `https://github.com/ethereum/consensus-spec-tests` */
+  /** Root Github URL `https://github.com/ethereum/consensus-specs` */
   specTestsRepoUrl: string;
   /** Release files names to download without prefix `["general", "mainnet", "minimal"]` */
   testsToDownload: string[];
@@ -25,6 +25,8 @@ export interface DownloadGenericTestsOptions<TestNames extends string> {
   outputDir: string;
   specTestsRepoUrl: string;
   testsToDownload: TestNames[];
+  testUrls?: Record<string, string>;
+  fetchInit?: RequestInit;
 }
 
 /**
@@ -39,7 +41,14 @@ export async function downloadTests(opts: DownloadTestsOptions, log: (msg: strin
  * Used by spec tests and SlashingProtectionInterchangeTest
  */
 export async function downloadGenericSpecTests<TestNames extends string>(
-  {specVersion, specTestsRepoUrl, outputDir, testsToDownload}: DownloadGenericTestsOptions<TestNames>,
+  {
+    specVersion,
+    specTestsRepoUrl,
+    outputDir,
+    testsToDownload,
+    testUrls,
+    fetchInit,
+  }: DownloadGenericTestsOptions<TestNames>,
   log: (msg: string) => void = logEmpty
 ): Promise<void> {
   log(`outputDir = ${outputDir}`);
@@ -62,12 +71,13 @@ export async function downloadGenericSpecTests<TestNames extends string>(
 
   await Promise.all(
     testsToDownload.map(async (test) => {
-      const url = `${specTestsRepoUrl ?? defaultSpecTestsRepoUrl}/releases/download/${specVersion}/${test}.tar.gz`;
+      const defaultUrl = `${specTestsRepoUrl ?? defaultSpecTestsRepoUrl}/releases/download/${specVersion}/${test}.tar.gz`;
       const tarball = path.join(outputDir, `${test}.tar.gz`);
 
       await retry(
         async () => {
-          const res = await fetch(url, {signal: AbortSignal.timeout(30 * 60 * 1000)});
+          const url = testUrls?.[test] ?? defaultUrl;
+          const res = await fetch(url, {signal: AbortSignal.timeout(30 * 60 * 1000), ...fetchInit});
 
           if (!res.ok) {
             throw new Error(`Failed to download file from ${url}: ${res.status} ${res.statusText}`);
@@ -95,7 +105,7 @@ export async function downloadGenericSpecTests<TestNames extends string>(
         {
           retries: 3,
           onRetry: (e, attempt) => {
-            log(`Download attempt ${attempt} for ${url} failed: ${e.message}`);
+            log(`Download attempt ${attempt} for ${test} failed: ${e.message}`);
           },
         }
       );

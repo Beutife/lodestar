@@ -117,7 +117,9 @@ export const {
 
   PTC_SIZE,
   MAX_PAYLOAD_ATTESTATIONS,
+  BUILDER_REGISTRY_LIMIT,
   BUILDER_PENDING_WITHDRAWALS_LIMIT,
+  MAX_BUILDERS_PER_WITHDRAWALS_SWEEP,
 } = activePreset;
 
 ////////////
@@ -157,8 +159,9 @@ export const DOMAIN_SYNC_COMMITTEE = Uint8Array.from([7, 0, 0, 0]);
 export const DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF = Uint8Array.from([8, 0, 0, 0]);
 export const DOMAIN_CONTRIBUTION_AND_PROOF = Uint8Array.from([9, 0, 0, 0]);
 export const DOMAIN_BLS_TO_EXECUTION_CHANGE = Uint8Array.from([10, 0, 0, 0]);
-export const DOMAIN_BEACON_BUILDER = Uint8Array.from([27, 0, 0, 0]);
+export const DOMAIN_BEACON_BUILDER = Uint8Array.from([11, 0, 0, 0]);
 export const DOMAIN_PTC_ATTESTER = Uint8Array.from([12, 0, 0, 0]);
+export const DOMAIN_PROPOSER_PREFERENCES = Uint8Array.from([13, 0, 0, 0]);
 
 // Application specific domains
 
@@ -193,14 +196,17 @@ export const PARTICIPATION_FLAG_WEIGHTS = [TIMELY_SOURCE_WEIGHT, TIMELY_TARGET_W
 // phase0 validator
 
 export const TARGET_AGGREGATORS_PER_COMMITTEE = 16;
-export const RANDOM_SUBNETS_PER_VALIDATOR = 1;
-export const EPOCHS_PER_RANDOM_SUBNET_SUBSCRIPTION = 256;
+
+// phase0 networking
+
+export const NODE_ID_BITS = 256;
+export const MAX_CONCURRENT_REQUESTS = 2;
+
 /** Rationale: https://github.com/ethereum/consensus-specs/blob/v1.1.10/specs/phase0/p2p-interface.md#why-are-there-attestation_subnet_count-attestation-subnets */
 export const ATTESTATION_SUBNET_COUNT = 64;
-export const SUBNETS_PER_NODE = 2;
-export const NODE_ID_BITS = 256;
-export const ATTESTATION_SUBNET_PREFIX_BITS = Math.log2(ATTESTATION_SUBNET_COUNT);
-export const EPOCHS_PER_SUBNET_SUBSCRIPTION = 256;
+export const ATTESTATION_SUBNET_EXTRA_BITS = 0;
+export const ATTESTATION_SUBNET_PREFIX_BITS =
+  Math.ceil(Math.log2(ATTESTATION_SUBNET_COUNT)) + ATTESTATION_SUBNET_EXTRA_BITS;
 
 // altair validator
 
@@ -268,6 +274,7 @@ export const MAX_REQUEST_LIGHT_CLIENT_COMMITTEE_HASHES = 128;
 
 /**
  * Optimistic sync
+ * @deprecated All networks have completed the merge transition, blocks are always safe to import optimistically.
  */
 export const SAFE_SLOTS_TO_IMPORT_OPTIMISTICALLY = 128;
 /** @deprecated */
@@ -284,7 +291,7 @@ export const KZG_COMMITMENT_GINDEX0 = 221184;
 export const KZG_COMMITMENT_SUBTREE_INDEX0 = KZG_COMMITMENT_GINDEX0 - 2 ** KZG_COMMITMENT_INCLUSION_PROOF_DEPTH;
 
 // ssz.deneb.BlobSidecars.elementType.fixedSize
-export const BLOBSIDECAR_FIXED_SIZE = 131928;
+export const BLOB_SIDECAR_FIXED_SIZE = 131928;
 
 // Electra Misc
 export const UNSET_DEPOSIT_REQUESTS_START_INDEX = 2n ** 64n - 1n;
@@ -309,5 +316,7 @@ export const KZG_COMMITMENTS_GINDEX = 27;
 export const KZG_COMMITMENTS_SUBTREE_INDEX = KZG_COMMITMENTS_GINDEX - 2 ** KZG_COMMITMENTS_INCLUSION_PROOF_DEPTH;
 
 // Gloas Misc
+export const BUILDER_INDEX_FLAG = 2 ** 40;
+export const BUILDER_INDEX_SELF_BUILD = Infinity;
 export const BUILDER_PAYMENT_THRESHOLD_NUMERATOR = 6;
 export const BUILDER_PAYMENT_THRESHOLD_DENOMINATOR = 10;

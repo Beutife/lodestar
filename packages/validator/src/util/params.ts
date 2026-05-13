@@ -110,8 +110,8 @@ function getSpecCriticalParams(localConfig: ChainConfig): Record<keyof ConfigWit
 
     PRESET_BASE: false, // Not relevant, each preset value is checked below
     CONFIG_NAME: false, // Arbitrary string, not relevant
-    // validator client behaviour does not change with this parameters, so it's not concerned about them.
-    // However, with the override ttd flag, the validator and beacon could be out of sync and prevent it from running.
+
+    // Deprecated - All networks have completed the merge transition
     TERMINAL_TOTAL_DIFFICULTY: false,
     TERMINAL_BLOCK_HASH: false,
     TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: false,
@@ -179,6 +179,13 @@ function getSpecCriticalParams(localConfig: ChainConfig): Record<keyof ConfigWit
     DEPOSIT_CONTRACT_ADDRESS: true,
 
     // Networking (non-critical as those do not affect consensus)
+    MAX_PAYLOAD_SIZE: false,
+    EPOCHS_PER_SUBNET_SUBSCRIPTION: false,
+    ATTESTATION_PROPAGATION_SLOT_RANGE: false,
+    MAXIMUM_GOSSIP_CLOCK_DISPARITY: false,
+    MESSAGE_DOMAIN_INVALID_SNAPPY: false,
+    MESSAGE_DOMAIN_VALID_SNAPPY: false,
+    SUBNETS_PER_NODE: false,
     MAX_REQUEST_BLOCKS: false,
     MAX_REQUEST_BLOCKS_DENEB: false,
     MIN_EPOCHS_FOR_BLOCK_REQUESTS: false,
@@ -190,6 +197,7 @@ function getSpecCriticalParams(localConfig: ChainConfig): Record<keyof ConfigWit
     MAX_REQUEST_BLOB_SIDECARS: false,
     MAX_REQUEST_BLOB_SIDECARS_ELECTRA: false,
     MAX_REQUEST_DATA_COLUMN_SIDECARS: false,
+    MAX_REQUEST_PAYLOADS: false,
 
     // # Phase0Preset
     /////////////////
@@ -315,6 +323,12 @@ function getSpecCriticalParams(localConfig: ChainConfig): Record<keyof ConfigWit
     PAYLOAD_ATTESTATION_DUE_BPS: gloasForkRelevant,
     PTC_SIZE: gloasForkRelevant,
     MAX_PAYLOAD_ATTESTATIONS: gloasForkRelevant,
+    BUILDER_REGISTRY_LIMIT: gloasForkRelevant,
     BUILDER_PENDING_WITHDRAWALS_LIMIT: gloasForkRelevant,
+    MAX_BUILDERS_PER_WITHDRAWALS_SWEEP: gloasForkRelevant,
+    MIN_BUILDER_WITHDRAWABILITY_DELAY: gloasForkRelevant,
+    CHURN_LIMIT_QUOTIENT_GLOAS: gloasForkRelevant,
+    CONSOLIDATION_CHURN_LIMIT_QUOTIENT: gloasForkRelevant,
+    MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS: gloasForkRelevant,
   };
 }

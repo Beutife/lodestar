@@ -3,7 +3,7 @@ import {fromHex as b} from "@lodestar/utils";
 import {ChainConfig} from "../types.js";
 
 // Mainnet config
-// https://github.com/ethereum/consensus-specs/blob/dev/configs/mainnet.yaml
+// https://github.com/ethereum/consensus-specs/blob/master/configs/mainnet.yaml
 
 export const chainConfig: ChainConfig = {
   // Extends the mainnet preset
@@ -54,7 +54,7 @@ export const chainConfig: ChainConfig = {
 
   // FULU
   FULU_FORK_VERSION: b("0x06000000"),
-  FULU_FORK_EPOCH: Infinity,
+  FULU_FORK_EPOCH: 411392, // December 3, 2025, 09:49:11pm UTC
 
   // GLOAS
   GLOAS_FORK_VERSION: b("0x07000000"),
@@ -70,6 +70,8 @@ export const chainConfig: ChainConfig = {
   SECONDS_PER_ETH1_BLOCK: 14,
   // 2**8 (= 256) epochs ~27 hours
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY: 256,
+  // 2**6 (= 64) epochs
+  MIN_BUILDER_WITHDRAWABILITY_DELAY: 64,
   // 2**8 (= 256) epochs ~27 hours
   SHARD_COMMITTEE_PERIOD: 256,
   // 2**11 (= 2,048) Eth1 blocks ~8 hours
@@ -130,10 +132,22 @@ export const chainConfig: ChainConfig = {
 
   // Networking
   // ---------------------------------------------------------------
-  // 2**10 (= 1024)
+  // 10 * 2**20 (= 10,485,760) bytes, 10 MiB
+  MAX_PAYLOAD_SIZE: 10485760,
+  // 2**10 (= 1,024) blocks
   MAX_REQUEST_BLOCKS: 1024,
-  // `MIN_VALIDATOR_WITHDRAWABILITY_DELAY + CHURN_LIMIT_QUOTIENT // 2` (= 33024, ~5 months)
+  // 2**8 (= 256) epochs
+  EPOCHS_PER_SUBNET_SUBSCRIPTION: 256,
+  // MIN_VALIDATOR_WITHDRAWABILITY_DELAY + CHURN_LIMIT_QUOTIENT // 2 (= 33,024) epochs
   MIN_EPOCHS_FOR_BLOCK_REQUESTS: 33024,
+  // 2**5 (= 32) slots
+  ATTESTATION_PROPAGATION_SLOT_RANGE: 32,
+  // 500ms
+  MAXIMUM_GOSSIP_CLOCK_DISPARITY: 500,
+  MESSAGE_DOMAIN_INVALID_SNAPPY: b("0x00000000"),
+  MESSAGE_DOMAIN_VALID_SNAPPY: b("0x01000000"),
+  // 2 subnets per node
+  SUBNETS_PER_NODE: 2,
 
   // Deneb
   // 2**7 (= 128)
@@ -155,6 +169,14 @@ export const chainConfig: ChainConfig = {
   // MAX_REQUEST_BLOCKS_DENEB * MAX_BLOBS_PER_BLOCK_ELECTRA
   MAX_REQUEST_BLOB_SIDECARS_ELECTRA: 1152,
 
+  // Gloas (EIP-8061)
+  // 2**15 (= 32,768)
+  CHURN_LIMIT_QUOTIENT_GLOAS: 32768,
+  // 2**16 (= 65,536)
+  CONSOLIDATION_CHURN_LIMIT_QUOTIENT: 65536,
+  // 2**8 * 10**9 (= 256,000,000,000)
+  MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS: 256000000000,
+
   // Fulu
   NUMBER_OF_CUSTODY_GROUPS: 128,
   DATA_COLUMN_SIDECAR_SUBNET_COUNT: 128,
@@ -166,7 +188,20 @@ export const chainConfig: ChainConfig = {
   // `2**12` (= 4096 epochs, ~18 days)
   MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: 4096,
 
+  // Gloas
+  // 2**7 (= 128) payloads
+  MAX_REQUEST_PAYLOADS: 128,
+
   // Blob Scheduling
   // ---------------------------------------------------------------
-  BLOB_SCHEDULE: [],
+  BLOB_SCHEDULE: [
+    {
+      EPOCH: 412672, // December 9, 2025, 02:21:11pm UTC
+      MAX_BLOBS_PER_BLOCK: 15,
+    },
+    {
+      EPOCH: 419072, // January 7, 2026, 01:01:11am UTC
+      MAX_BLOBS_PER_BLOCK: 21,
+    },
+  ],
 };

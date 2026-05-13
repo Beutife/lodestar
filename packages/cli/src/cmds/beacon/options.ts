@@ -10,6 +10,8 @@ type BeaconExtraArgs = {
   bootnodesFile?: string;
   checkpointSyncUrl?: string;
   checkpointState?: string;
+  unsafeCheckpointState?: string;
+  lastPersistedCheckpointState?: boolean;
   wssCheckpoint?: string;
   forceCheckpointSync?: boolean;
   ignoreWeakSubjectivityCheck?: boolean;
@@ -58,8 +60,22 @@ export const beaconExtraOptions: CliCommandOptions<BeaconExtraArgs> = {
   },
 
   checkpointState: {
-    description: "Set a checkpoint state to start syncing from",
+    description: "File path or url to finalized checkpoint state to start syncing from",
     type: "string",
+    group: "weak subjectivity",
+  },
+
+  unsafeCheckpointState: {
+    hidden: true,
+    description: "File path or url to unfinalized checkpoint state to start syncing from",
+    type: "string",
+    group: "weak subjectivity",
+  },
+
+  lastPersistedCheckpointState: {
+    hidden: true,
+    description: "Use the last safe persisted checkpoint state to start syncing from",
+    type: "boolean",
     group: "weak subjectivity",
   },
 
@@ -134,7 +150,7 @@ export const beaconExtraOptions: CliCommandOptions<BeaconExtraArgs> = {
 
   private: {
     description:
-      "Do not send implementation details over p2p identify protocol and in builder, execution engine and eth1 requests",
+      "Do not send implementation details over p2p identify protocol, and in builder and execution engine requests",
     type: "boolean",
   },
 
@@ -158,10 +174,12 @@ export const beaconExtraOptions: CliCommandOptions<BeaconExtraArgs> = {
 type ENRArgs = {
   "enr.ip"?: string;
   "enr.tcp"?: number;
-  "enr.ip6"?: string;
   "enr.udp"?: number;
+  "enr.quic"?: number;
+  "enr.ip6"?: string;
   "enr.tcp6"?: number;
   "enr.udp6"?: number;
+  "enr.quic6"?: number;
   nat?: boolean;
 };
 
@@ -181,6 +199,11 @@ const enrOptions: CliCommandOptions<ENRArgs> = {
     type: "number",
     group: "enr",
   },
+  "enr.quic": {
+    description: "Override ENR QUIC entry",
+    type: "number",
+    group: "enr",
+  },
   "enr.ip6": {
     description: "Override ENR IPv6 entry",
     type: "string",
@@ -193,6 +216,11 @@ const enrOptions: CliCommandOptions<ENRArgs> = {
   },
   "enr.udp6": {
     description: "Override ENR (IPv6-specific) UDP entry",
+    type: "number",
+    group: "enr",
+  },
+  "enr.quic6": {
+    description: "Override ENR (IPv6-specific) QUIC entry",
     type: "number",
     group: "enr",
   },

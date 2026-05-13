@@ -4,14 +4,6 @@ import {BlobsBundle, ExecutionPayload, ExecutionRequests, Root, RootHex, Wei} fr
 import {BlobAndProof} from "@lodestar/types/deneb";
 import {BlobAndProofV2} from "@lodestar/types/fulu";
 import {strip0xPrefix} from "@lodestar/utils";
-import {
-  ErrorJsonRpcResponse,
-  HttpRpcError,
-  IJsonRpcHttpClient,
-  JsonRpcHttpClientEvent,
-  ReqOpts,
-} from "../../eth1/provider/jsonRpcHttpClient.js";
-import {bytesToData, numToQuantity} from "../../eth1/provider/utils.js";
 import {Metrics} from "../../metrics/index.js";
 import {EPOCHS_PER_BATCH} from "../../sync/constants.js";
 import {getLodestarClientVersion} from "../../util/metadata.js";
@@ -27,6 +19,13 @@ import {
   PayloadId,
   VersionedHashes,
 } from "./interface.js";
+import {
+  ErrorJsonRpcResponse,
+  HttpRpcError,
+  IJsonRpcHttpClient,
+  JsonRpcHttpClientEvent,
+  ReqOpts,
+} from "./jsonRpcHttpClient.js";
 import {PayloadIdCache} from "./payloadIdCache.js";
 import {
   BLOB_AND_PROOF_V2_RPC_BYTES,
@@ -45,7 +44,7 @@ import {
   serializePayloadAttributes,
   serializeVersionedHashes,
 } from "./types.js";
-import {getExecutionEngineState} from "./utils.js";
+import {bytesToData, getExecutionEngineState, numToQuantity} from "./utils.js";
 
 export type ExecutionEngineModules = {
   signal: AbortSignal;
@@ -129,6 +128,7 @@ const getClientVersionOpts: ReqOpts = {routeId: "getClientVersion"};
  */
 export class ExecutionEngineHttp implements IExecutionEngine {
   private logger: Logger;
+  private metrics: Metrics | null;
 
   // The default state is ONLINE, it will be updated to SYNCING once we receive the first payload
   // This assumption is better than the OFFLINE state, since we can't be sure if the EL is offline and being offline may trigger some notifications
@@ -168,6 +168,7 @@ export class ExecutionEngineHttp implements IExecutionEngine {
       metrics?.engineHttpProcessorQueue
     );
     this.logger = logger;
+    this.metrics = metrics ?? null;
 
     this.rpc.emitter.on(JsonRpcHttpClientEvent.ERROR, ({error}) => {
       this.updateEngineState(getExecutionEngineState({payloadError: error, oldState: this.state}));
@@ -194,15 +195,12 @@ export class ExecutionEngineHttp implements IExecutionEngine {
    *   1. {status: INVALID_BLOCK_HASH, latestValidHash: null, validationError:
    *      errorMessage | null} if the blockHash validation has failed
    *
-   *   2. {status: INVALID_TERMINAL_BLOCK, latestValidHash: null, validationError:
-   *      errorMessage | null} if terminal block conditions are not satisfied
-   *
-   *   3. {status: SYNCING, latestValidHash: null, validationError: null} if the payload
+   *   2. {status: SYNCING, latestValidHash: null, validationError: null} if the payload
    *      extends the canonical chain and requisite data for its validation is missing
    *      with the payload status obtained from the Payload validation process if the payload
    *      has been fully validated while processing the call
    *
-   *   4. {status: ACCEPTED, latestValidHash: null, validationError: null} if the
+   *   3. {status: ACCEPTED, latestValidHash: null, validationError: null} if the
    *      following conditions are met:
    *        i) the blockHash of the payload is valid
    *        ii) the payload doesn't extend the canonical chain
@@ -218,13 +216,15 @@ export class ExecutionEngineHttp implements IExecutionEngine {
     executionRequests?: ExecutionRequests
   ): Promise<ExecutePayloadResponse> {
     const method =
-      ForkSeq[fork] >= ForkSeq.electra
-        ? "engine_newPayloadV4"
-        : ForkSeq[fork] >= ForkSeq.deneb
-          ? "engine_newPayloadV3"
-          : ForkSeq[fork] >= ForkSeq.capella
-            ? "engine_newPayloadV2"
-            : "engine_newPayloadV1";
+      ForkSeq[fork] >= ForkSeq.gloas
+        ? "engine_newPayloadV5"
+        : ForkSeq[fork] >= ForkSeq.electra
+          ? "engine_newPayloadV4"
+          : ForkSeq[fork] >= ForkSeq.deneb
+            ? "engine_newPayloadV3"
+            : ForkSeq[fork] >= ForkSeq.capella
+              ? "engine_newPayloadV2"
+              : "engine_newPayloadV1";
 
     const serializedExecutionPayload = serializeExecutionPayload(fork, executionPayload);
 
@@ -246,7 +246,7 @@ export class ExecutionEngineHttp implements IExecutionEngine {
         }
         const serializedExecutionRequests = serializeExecutionRequests(executionRequests);
         engineRequest = {
-          method: "engine_newPayloadV4",
+          method: ForkSeq[fork] >= ForkSeq.gloas ? "engine_newPayloadV5" : "engine_newPayloadV4",
           params: [
             serializedExecutionPayload,
             serializedVersionedHashes,
@@ -330,16 +330,11 @@ export class ExecutionEngineHttp implements IExecutionEngine {
    *      errorMessage | null}, payloadId: null}
    *      obtained from the Payload validation process if the payload is deemed INVALID
    *
-   *   3. {payloadStatus: {status: INVALID_TERMINAL_BLOCK, latestValidHash: null,
-   *      validationError: errorMessage | null}, payloadId: null}
-   *      either obtained from the Payload validation process or as a result of validating a
-   *      PoW block referenced by forkchoiceState.headBlockHash
-   *
-   *   4. {payloadStatus: {status: VALID, latestValidHash: forkchoiceState.headBlockHash,
+   *   3. {payloadStatus: {status: VALID, latestValidHash: forkchoiceState.headBlockHash,
    *      validationError: null}, payloadId: null}
    *      if the payload is deemed VALID and a build process hasn't been started
    *
-   *   5. {payloadStatus: {status: VALID, latestValidHash: forkchoiceState.headBlockHash,
+   *   4. {payloadStatus: {status: VALID, latestValidHash: forkchoiceState.headBlockHash,
    *      validationError: null}, payloadId: buildProcessId}
    *      if the payload is deemed VALID and the build process has begun.
    *
@@ -355,11 +350,13 @@ export class ExecutionEngineHttp implements IExecutionEngine {
     // Once on capella, should this need to be permanently switched to v2 when payload attrs
     // not provided
     const method =
-      ForkSeq[fork] >= ForkSeq.deneb
-        ? "engine_forkchoiceUpdatedV3"
-        : ForkSeq[fork] >= ForkSeq.capella
-          ? "engine_forkchoiceUpdatedV2"
-          : "engine_forkchoiceUpdatedV1";
+      ForkSeq[fork] >= ForkSeq.gloas
+        ? "engine_forkchoiceUpdatedV4"
+        : ForkSeq[fork] >= ForkSeq.deneb
+          ? "engine_forkchoiceUpdatedV3"
+          : ForkSeq[fork] >= ForkSeq.capella
+            ? "engine_forkchoiceUpdatedV2"
+            : "engine_forkchoiceUpdatedV1";
     const payloadAttributesRpc = payloadAttributes ? serializePayloadAttributes(payloadAttributes) : undefined;
     // If we are just fcUing and not asking execution for payload, retry is not required
     // and we can move on, as the next fcU will be issued soon on the new slot
@@ -378,6 +375,7 @@ export class ExecutionEngineHttp implements IExecutionEngine {
     } = await request;
 
     this.updateEngineState(getExecutionEngineState({payloadStatus: status, oldState: this.state}));
+    this.metrics?.engineNotifyForkchoiceUpdateResult.inc({result: status});
 
     switch (status) {
       case ExecutionPayloadStatus.VALID:
@@ -444,8 +442,11 @@ export class ExecutionEngineHttp implements IExecutionEngine {
       case ForkName.electra:
         method = "engine_getPayloadV4";
         break;
-      default:
+      case ForkName.fulu:
         method = "engine_getPayloadV5";
+        break;
+      default:
+        method = "engine_getPayloadV6";
         break;
     }
     const payloadResponse = await this.rpc.fetchWithRetries<

@@ -1,6 +1,6 @@
 import {ContainerType, ValueOf} from "@chainsafe/ssz";
 import {BeaconConfig} from "@lodestar/config";
-import {ForkPreBellatrix, ForkSeq} from "@lodestar/params";
+import {ForkName, ForkPreBellatrix, ForkSeq, isForkPostDeneb} from "@lodestar/params";
 import {blindedOrFullBlockToHeader, computeEpochAtSlot} from "@lodestar/state-transition";
 import {
   AggregateAndProof,
@@ -11,7 +11,7 @@ import {
   RootHex,
   Slot,
   altair,
-  capella,
+  gloas,
   phase0,
   ssz,
   sszTypesFor,
@@ -33,7 +33,8 @@ export enum SignableMessageType {
   SYNC_COMMITTEE_SELECTION_PROOF = "SYNC_COMMITTEE_SELECTION_PROOF",
   SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF = "SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF",
   VALIDATOR_REGISTRATION = "VALIDATOR_REGISTRATION",
-  BLS_TO_EXECUTION_CHANGE = "BLS_TO_EXECUTION_CHANGE",
+  EXECUTION_PAYLOAD_ENVELOPE = "EXECUTION_PAYLOAD_ENVELOPE",
+  PAYLOAD_ATTESTATION = "PAYLOAD_ATTESTATION",
 }
 
 const AggregationSlotType = new ContainerType({
@@ -83,7 +84,8 @@ export type SignableMessage =
   | {type: SignableMessageType.SYNC_COMMITTEE_SELECTION_PROOF; data: ValueOf<typeof SyncAggregatorSelectionDataType>}
   | {type: SignableMessageType.SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF; data: altair.ContributionAndProof}
   | {type: SignableMessageType.VALIDATOR_REGISTRATION; data: ValidatorRegistrationV1}
-  | {type: SignableMessageType.BLS_TO_EXECUTION_CHANGE; data: capella.BLSToExecutionChange};
+  | {type: SignableMessageType.EXECUTION_PAYLOAD_ENVELOPE; data: gloas.ExecutionPayloadEnvelope}
+  | {type: SignableMessageType.PAYLOAD_ATTESTATION; data: gloas.PayloadAttestationData};
 
 const requiresForkInfo: Record<SignableMessageType, boolean> = {
   [SignableMessageType.AGGREGATION_SLOT]: true,
@@ -98,7 +100,8 @@ const requiresForkInfo: Record<SignableMessageType, boolean> = {
   [SignableMessageType.SYNC_COMMITTEE_SELECTION_PROOF]: true,
   [SignableMessageType.SYNC_COMMITTEE_CONTRIBUTION_AND_PROOF]: true,
   [SignableMessageType.VALIDATOR_REGISTRATION]: false,
-  [SignableMessageType.BLS_TO_EXECUTION_CHANGE]: true,
+  [SignableMessageType.EXECUTION_PAYLOAD_ENVELOPE]: true,
+  [SignableMessageType.PAYLOAD_ATTESTATION]: true,
 };
 
 type Web3SignerSerializedRequest = {
@@ -147,12 +150,12 @@ export async function externalSignerPostSignature(
   requestObj.signingRoot = toRootHex(signingRoot);
 
   if (requiresForkInfo[signableMessage.type]) {
-    const forkInfo = config.getForkInfo(signingSlot);
+    const forkInfo = getForkInfoForSigning(config, signingSlot, signableMessage.type);
     requestObj.fork_info = {
       fork: {
         previous_version: toHex(forkInfo.prevVersion),
         current_version: toHex(forkInfo.version),
-        epoch: String(computeEpochAtSlot(signingSlot)),
+        epoch: String(forkInfo.epoch),
       },
       genesis_validators_root: toRootHex(config.genesisValidatorsRoot),
     };
@@ -271,7 +274,35 @@ function serializerSignableMessagePayload(config: BeaconConfig, payload: Signabl
     case SignableMessageType.VALIDATOR_REGISTRATION:
       return {validator_registration: ssz.bellatrix.ValidatorRegistrationV1.toJson(payload.data)};
 
-    case SignableMessageType.BLS_TO_EXECUTION_CHANGE:
-      return {BLS_TO_EXECUTION_CHANGE: ssz.capella.BLSToExecutionChange.toJson(payload.data)};
+    case SignableMessageType.EXECUTION_PAYLOAD_ENVELOPE:
+      return {execution_payload_envelope: ssz.gloas.ExecutionPayloadEnvelope.toJson(payload.data)};
+
+    case SignableMessageType.PAYLOAD_ATTESTATION:
+      return {payload_attestation: ssz.gloas.PayloadAttestationData.toJson(payload.data)};
   }
+}
+
+function getForkInfoForSigning(
+  config: BeaconConfig,
+  signingSlot: Slot,
+  messageType: SignableMessageType
+): {version: Uint8Array; prevVersion: Uint8Array; epoch: number} {
+  const forkInfo = config.getForkInfo(signingSlot);
+
+  if (messageType === SignableMessageType.VOLUNTARY_EXIT && isForkPostDeneb(forkInfo.name)) {
+    // Always uses Capella fork post-Deneb (EIP-7044)
+    const capellaFork = config.forks[ForkName.capella];
+    return {
+      version: capellaFork.version,
+      prevVersion: capellaFork.prevVersion,
+      epoch: capellaFork.epoch,
+    };
+  }
+
+  // Use the fork at the signing slot by default
+  return {
+    version: forkInfo.version,
+    prevVersion: forkInfo.prevVersion,
+    epoch: computeEpochAtSlot(signingSlot),
+  };
 }

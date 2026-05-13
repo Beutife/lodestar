@@ -7,10 +7,11 @@ import {ChainForkConfig, createBeaconConfig} from "@lodestar/config";
 import {LevelDbController} from "@lodestar/db/controller/level";
 import {LoggerNode, getNodeLogger} from "@lodestar/logger/node";
 import {ACTIVE_PRESET, PresetName} from "@lodestar/params";
+import {createBeaconStateView, createPubkeyCache, syncPubkeys} from "@lodestar/state-transition";
 import {ErrorAborted, bytesToInt, formatBytes} from "@lodestar/utils";
 import {ProcessShutdownCallback} from "@lodestar/validator";
 import {BeaconNodeOptions, getBeaconConfigFromArgs} from "../../config/index.js";
-import {getNetworkBootnodes, getNetworkData, isKnownNetworkName, readBootnodes} from "../../networks/index.js";
+import {getNetworkBootnodes, isKnownNetworkName, readBootnodes} from "../../networks/index.js";
 import {GlobalArgs, parseBeaconNodeArgs} from "../../options/index.js";
 import {LogArgs} from "../../options/logOptions.js";
 import {
@@ -70,25 +71,31 @@ export async function beaconHandler(args: BeaconArgs & GlobalArgs): Promise<void
 
   // BeaconNode setup
   try {
-    const {anchorState, wsCheckpoint} = await initBeaconState(
-      options,
-      args,
-      config,
-      db,
-      logger,
-      abortController.signal
-    );
+    const {
+      anchorState,
+      stateBytes: anchorStateBytes,
+      isFinalized,
+      wsCheckpoint,
+    } = await initBeaconState(args, beaconPaths.dataDir, config, db, logger);
     const beaconConfig = createBeaconConfig(config, anchorState.genesisValidatorsRoot);
+    const pubkeyCache = createPubkeyCache();
+    syncPubkeys(pubkeyCache, anchorState.validators.getAllReadonlyValues());
+    const anchorStateView = args["chain.nativeStateView"]
+      ? createBeaconStateView({useNative: true, stateBytes: anchorStateBytes})
+      : createBeaconStateView({useNative: false, anchorState, config: beaconConfig, pubkeyCache});
+
     const node = await BeaconNode.init({
       opts: options,
       config: beaconConfig,
+      pubkeyCache,
       db,
       logger,
       processShutdownCallback,
       privateKey,
       dataDir: beaconPaths.dataDir,
       peerStoreDir: beaconPaths.peerStoreDir,
-      anchorState,
+      anchorState: anchorStateView,
+      isAnchorStateFinalized: isFinalized,
       wsCheckpoint,
     });
 
@@ -143,7 +150,9 @@ export async function beaconHandler(args: BeaconArgs & GlobalArgs): Promise<void
           // See https://github.com/ChainSafe/lodestar/issues/5642
           process.exit(0);
         } catch (e) {
-          logger.error("Error closing beacon node", {}, e as Error);
+          // If we start from unfinalized state, we don't have checkpoint state so there is this error
+          // "No state in cache for finalized checkpoint state epoch"
+          logger.warn("Error closing beacon node", {}, e as Error);
           // Make sure db is always closed gracefully
           await db.close();
           // Must explicitly exit process due to potential active handles
@@ -185,16 +194,6 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
   // Add detailed version string for API node/version endpoint
   beaconNodeOptions.set({api: {commit, version}});
 
-  if (args.supernode) {
-    beaconNodeOptions.set({chain: {supernode: true}, network: {supernode: true}});
-  }
-
-  // Set known depositContractDeployBlock
-  if (isKnownNetworkName(network)) {
-    const {depositContractDeployBlock} = getNetworkData(network);
-    beaconNodeOptions.set({eth1: {depositContractDeployBlock}});
-  }
-
   const logger = initLogger(args, beaconPaths.dataDir, config);
   const {privateKey, enr} = await initPrivateKeyAndEnr(args, beaconPaths.beaconDir, logger);
 
@@ -211,7 +210,7 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
     beaconNodeOptions.set({network: {discv5: {bootEnrs: [...new Set(bootnodes)]}}});
   }
 
-  beaconNodeOptions.set({chain: {initialCustodyGroupCount: getInitialCustodyGroupCount(args, config, enr)}});
+  beaconNodeOptions.set({chain: {initialCustodyGroupCount: getInitialCustodyGroupCount(args, config, logger, enr)}});
 
   if (args.disableLightClientServer) {
     beaconNodeOptions.set({chain: {disableLightClientServer: true}});
@@ -221,13 +220,12 @@ export async function beaconHandlerInit(args: BeaconArgs & GlobalArgs) {
     beaconNodeOptions.set({network: {private: true}, api: {private: true}});
   } else {
     const versionStr = `Lodestar/${version}`;
-    const simpleVersionStr = version.split("/")[0];
-    // Add simple version string for libp2p agent version
-    beaconNodeOptions.set({network: {version: simpleVersionStr}});
+    // Add version string for libp2p agent version
+    beaconNodeOptions.set({network: {version}});
     // Add User-Agent header to all builder requests
     beaconNodeOptions.set({executionBuilder: {userAgent: versionStr}});
     // Set jwt version with version string
-    beaconNodeOptions.set({executionEngine: {jwtVersion: versionStr}, eth1: {jwtVersion: versionStr}});
+    beaconNodeOptions.set({executionEngine: {jwtVersion: versionStr}});
     // Set commit and version for ClientVersion
     beaconNodeOptions.set({executionEngine: {commit, version}});
   }
@@ -255,13 +253,28 @@ export function initLogger(
   return logger;
 }
 
-function getInitialCustodyGroupCount(args: BeaconArgs & GlobalArgs, config: ChainForkConfig, enr: SignableENR): number {
+function getInitialCustodyGroupCount(
+  args: BeaconArgs & GlobalArgs,
+  config: ChainForkConfig,
+  logger: LoggerNode,
+  enr: SignableENR
+): number {
   if (args.supernode) {
     return config.NUMBER_OF_CUSTODY_GROUPS;
   }
 
   const enrCgcBytes = enr.kvs.get("cgc");
   const enrCgc = enrCgcBytes != null ? bytesToInt(enrCgcBytes, "be") : 0;
+
+  if (args.semiSupernode) {
+    const semiSupernodeCgc = Math.floor(config.NUMBER_OF_CUSTODY_GROUPS / 2);
+    if (enrCgc > semiSupernodeCgc) {
+      logger.warn(
+        `Reducing custody requirements is not supported, will continue to use custody group count of ${enrCgc}`
+      );
+    }
+    return Math.max(enrCgc, semiSupernodeCgc);
+  }
 
   return Math.max(enrCgc, config.CUSTODY_REQUIREMENT);
 }

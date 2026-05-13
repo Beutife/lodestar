@@ -1,3 +1,4 @@
+import {PeerId} from "@libp2p/interface";
 import {ResponseOutgoing} from "@lodestar/reqresp";
 import {computeEpochAtSlot} from "@lodestar/state-transition";
 import {ColumnIndex} from "@lodestar/types";
@@ -5,6 +6,7 @@ import {toRootHex} from "@lodestar/utils";
 import {IBeaconChain} from "../../../chain/index.js";
 import {IBeaconDb} from "../../../db/index.js";
 import {DataColumnSidecarsByRootRequest} from "../../../util/types.js";
+import {prettyPrintPeerId} from "../../util.js";
 import {
   handleColumnSidecarUnavailability,
   validateRequestedDataColumns,
@@ -13,7 +15,9 @@ import {
 export async function* onDataColumnSidecarsByRoot(
   requestBody: DataColumnSidecarsByRootRequest,
   chain: IBeaconChain,
-  db: IBeaconDb
+  db: IBeaconDb,
+  peerId: PeerId,
+  peerClient: string
 ): AsyncIterable<ResponseOutgoing> {
   // SPEC: minimum_request_epoch = max(current_epoch - MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS, FULU_FORK_EPOCH)
   const currentEpoch = chain.clock.currentEpoch;
@@ -30,12 +34,20 @@ export async function* onDataColumnSidecarsByRoot(
     }
 
     const blockRootHex = toRootHex(blockRoot);
-    const block = chain.forkChoice.getBlockHex(blockRootHex);
+    const block = chain.forkChoice.getBlockHexDefaultStatus(blockRootHex);
     // If the block is not in fork choice, it may be finalized. Attempt to find its slot in block archive
     const slot = block ? block.slot : await db.blockArchive.getSlotByRoot(blockRoot);
 
     if (slot === null) {
       // We haven't seen the block
+      continue;
+    }
+
+    if (slot < chain.earliestAvailableSlot) {
+      chain.logger.verbose("Peer did not respect earliestAvailableSlot for DataColumnSidecarsByRoot", {
+        peer: prettyPrintPeerId(peerId),
+        client: peerClient,
+      });
       continue;
     }
 
@@ -49,11 +61,7 @@ export async function* onDataColumnSidecarsByRoot(
       continue;
     }
 
-    const dataColumns = block
-      ? // Non-finalized sidecars are stored by block root
-        await db.dataColumnSidecar.getManyBinary(blockRoot, availableColumns)
-      : // Finalized sidecars are archived and stored by slot
-        await db.dataColumnSidecarArchive.getManyBinary(slot, availableColumns);
+    const dataColumns = await chain.getSerializedDataColumnSidecars(slot, blockRootHex, availableColumns);
 
     const unavailableColumnIndices: ColumnIndex[] = [];
     for (let i = 0; i < dataColumns.length; i++) {

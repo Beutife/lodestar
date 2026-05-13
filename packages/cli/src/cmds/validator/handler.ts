@@ -164,6 +164,7 @@ export async function validatorHandler(args: IValidatorCliArgs & GlobalArgs): Pr
         globalInit: {
           requestWireFormat: parseWireFormat(args, "http.requestWireFormat"),
           responseWireFormat: parseWireFormat(args, "http.responseWireFormat"),
+          timeoutMs: args["http.requestTimeout"],
           headers: {"User-Agent": `Lodestar/${version}`},
         },
       },
@@ -179,9 +180,15 @@ export async function validatorHandler(args: IValidatorCliArgs & GlobalArgs): Pr
       broadcastValidation: parseBroadcastValidation(args.broadcastValidation),
       blindedLocal: args.blindedLocal,
       externalSigner: {
-        url: args["externalSigner.url"],
+        urls: args["externalSigner.urls"],
         fetch: args["externalSigner.fetch"],
         fetchInterval: args["externalSigner.fetchInterval"],
+      },
+      clock: {
+        // We don't wanna skip slots if slot processing takes longer than slot duration
+        // in a distributed setup as delays might get caused by hanging HTTP requests
+        // due to DVT middleware not reaching the signature threshold
+        skipSlots: args["clock.skipSlots"] ?? !args.distributed,
       },
     },
     metrics

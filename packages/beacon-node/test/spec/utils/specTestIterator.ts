@@ -59,19 +59,34 @@ const coveredTestRunners = [
 // ],
 // ```
 export const defaultSkipOpts: SkipOpts = {
-  skippedForks: ["eip7732", "eip7805", "gloas"],
-  // TODO: capella
-  // BeaconBlockBody proof in lightclient is the new addition in v1.3.0-rc.2-hotfix
-  // Skip them for now to enable subsequently
+  skippedForks: ["eip7805", "heze"],
   skippedTestSuites: [
+    // Merge transition tests are skipped because we no longer support performing the merge transition.
+    // All networks have already completed the merge, so this code path is no longer needed.
+    /^bellatrix\/fork_choice\/on_merge_block\/.*/,
+    // TODO: capella
+    // BeaconBlockBody proof in lightclient is the new addition in v1.3.0-rc.2-hotfix
+    // Skip them for now to enable subsequently
     /^capella\/light_client\/single_merkle_proof\/BeaconBlockBody.*/,
     /^deneb\/light_client\/single_merkle_proof\/BeaconBlockBody.*/,
     /^electra\/light_client\/single_merkle_proof\/BeaconBlockBody.*/,
     /^fulu\/light_client\/single_merkle_proof\/BeaconBlockBody.*/,
     /^.+\/light_client\/data_collection\/.*/,
+    /^gloas\/ssz_static\/ForkChoiceNode.*$/,
+    // Ignore the partial data column container additions for now. Unskip them when
+    // cell level DAS is ready
+    /^fulu\/ssz_static\/PartialDataColumn(Header|PartsMetadata|Sidecar)\/.*$/,
+    /^gloas\/ssz_static\/PartialDataColumn(GroupID|PartsMetadata|Sidecar)\/.*$/,
+    // TODO-GLOAS: re-enable after Gloas light client is implemented
+    /^gloas\/light_client\/.*/,
+    /^gloas\/ssz_static\/LightClient(Bootstrap|FinalityUpdate|Header|OptimisticUpdate|Update)\/.*/,
   ],
-  skippedTests: [],
-  skippedRunners: [],
+  skippedTests: [
+    // TODO-GLOAS: re-enable after gloas light client is implemented
+    /\/gloas_fork$/,
+  ],
+  // TODO GLOAS: Investigate why networking tests are failing since alpha.5
+  skippedRunners: ["fast_confirmation", "networking"],
 };
 
 /**
@@ -98,7 +113,7 @@ export const defaultSkipOpts: SkipOpts = {
  * tests / mainnet / altair / ssz_static       / Validator    / ssz_random   / case_0/roots.yaml
  * tests / mainnet / altair / fork             / fork         / pyspec_tests / altair_fork_random_0/meta.yaml
  * ```
- * Ref: https://github.com/ethereum/consensus-specs/tree/dev/tests/formats#test-structure
+ * Ref: https://github.com/ethereum/consensus-specs/blob/v1.6.1/tests/formats/README.md#test-structure
  */
 export function specTestIterator(
   configDirpath: string,

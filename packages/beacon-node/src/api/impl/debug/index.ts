@@ -1,9 +1,10 @@
 import {routes} from "@lodestar/api";
 import {ApplicationMethods} from "@lodestar/api/server";
 import {ExecutionStatus} from "@lodestar/fork-choice";
-import {ZERO_HASH_HEX, isForkPostDeneb, isForkPostFulu} from "@lodestar/params";
-import {BeaconState, deneb, fulu, sszTypesFor} from "@lodestar/types";
-import {fromAsync, toRootHex} from "@lodestar/utils";
+import {ForkPostDeneb, ZERO_HASH_HEX, isForkPostDeneb, isForkPostFulu} from "@lodestar/params";
+import {BeaconState, DataColumnSidecar, DataColumnSidecars, type SignedBeaconBlock, sszTypesFor} from "@lodestar/types";
+import {toRootHex} from "@lodestar/utils";
+import {getBlobKzgCommitments} from "../../../util/dataColumns.js";
 import {isOptimisticBlock} from "../../../util/forkChoice.js";
 import {getStateSlotFromBytes} from "../../../util/multifork.js";
 import {getBlockResponse} from "../beacon/blocks/utils.js";
@@ -14,7 +15,6 @@ import {assertUniqueItems} from "../utils.js";
 export function getDebugApi({
   chain,
   config,
-  db,
 }: Pick<ApiModules, "chain" | "config" | "db">): ApplicationMethods<routes.debug.Endpoints> {
   return {
     async getDebugChainHeadsV2() {
@@ -97,17 +97,14 @@ export function getDebugApi({
       const fork = config.getForkName(block.message.slot);
       const blockRoot = sszTypesFor(fork).BeaconBlock.hashTreeRoot(block.message);
 
-      let dataColumnSidecars: fulu.DataColumnSidecars;
+      let dataColumnSidecars: DataColumnSidecar[];
 
       const blobCount = isForkPostDeneb(fork)
-        ? (block.message.body as deneb.BeaconBlockBody).blobKzgCommitments.length
+        ? getBlobKzgCommitments(fork, block as SignedBeaconBlock<ForkPostDeneb>).length
         : 0;
 
       if (isForkPostFulu(fork) && blobCount > 0) {
-        dataColumnSidecars = await fromAsync(db.dataColumnSidecar.valuesStream(blockRoot));
-        if (dataColumnSidecars.length === 0) {
-          dataColumnSidecars = await fromAsync(db.dataColumnSidecarArchive.valuesStream(block.message.slot));
-        }
+        dataColumnSidecars = await chain.getDataColumnSidecars(block.message.slot, toRootHex(blockRoot));
 
         if (dataColumnSidecars.length === 0) {
           throw Error(
@@ -119,7 +116,9 @@ export function getDebugApi({
       }
 
       return {
-        data: indices ? dataColumnSidecars.filter(({index}) => indices.includes(index)) : dataColumnSidecars,
+        data: (indices
+          ? dataColumnSidecars.filter(({index}) => indices.includes(index))
+          : dataColumnSidecars) as DataColumnSidecars,
         meta: {
           executionOptimistic,
           finalized,

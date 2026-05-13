@@ -1,4 +1,4 @@
-import {Message} from "@libp2p/interface";
+import type {Message} from "@libp2p/gossipsub";
 import {ForkName} from "@lodestar/params";
 import {Slot, SlotOptionalRoot} from "@lodestar/types";
 import {PeerIdStr} from "../../util/peerId.js";
@@ -15,6 +15,8 @@ export type PendingGossipsubMessage = {
   msgSlot?: Slot;
   msgId: string;
   propagationSource: PeerIdStr;
+  clientAgent: string;
+  clientVersion: string;
   seenTimestampSec: number;
   startProcessUnixSec: number | null;
   // specific properties for IndexedGossipQueueMinSize, for beacon_attestation topic only

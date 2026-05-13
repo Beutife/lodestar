@@ -3,7 +3,7 @@ import {fromHex as b} from "@lodestar/utils";
 import {ChainConfig} from "../types.js";
 
 // Minimal config
-// https://github.com/ethereum/consensus-specs/blob/dev/configs/minimal.yaml
+// https://github.com/ethereum/consensus-specs/blob/master/configs/minimal.yaml
 
 export const chainConfig: ChainConfig = {
   // Extends the minimal preset
@@ -64,6 +64,8 @@ export const chainConfig: ChainConfig = {
   SECONDS_PER_ETH1_BLOCK: 14,
   // 2**8 (= 256) epochs
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY: 256,
+  // [customized] 2**1 (= 2) epochs
+  MIN_BUILDER_WITHDRAWABILITY_DELAY: 2,
   // [customized] higher frequency of committee turnover and faster time to acceptable voluntary exit
   SHARD_COMMITTEE_PERIOD: 64,
   // [customized] process deposits more quickly, but insecure
@@ -125,10 +127,22 @@ export const chainConfig: ChainConfig = {
 
   // Networking
   // ---------------------------------------------------------------
-  // 2**10 (= 1024)
+  // 10 * 2**20 (= 10,485,760) bytes, 10 MiB
+  MAX_PAYLOAD_SIZE: 10485760,
+  // 2**10 (= 1,024) blocks
   MAX_REQUEST_BLOCKS: 1024,
-  // [customized] `MIN_VALIDATOR_WITHDRAWABILITY_DELAY + CHURN_LIMIT_QUOTIENT // 2` (= 272)
+  // 2**8 (= 256) epochs
+  EPOCHS_PER_SUBNET_SUBSCRIPTION: 256,
+  // [customized] MIN_VALIDATOR_WITHDRAWABILITY_DELAY + CHURN_LIMIT_QUOTIENT // 2 (= 272) epochs
   MIN_EPOCHS_FOR_BLOCK_REQUESTS: 272,
+  // 2**5 (= 32) slots
+  ATTESTATION_PROPAGATION_SLOT_RANGE: 32,
+  // 500ms
+  MAXIMUM_GOSSIP_CLOCK_DISPARITY: 500,
+  MESSAGE_DOMAIN_INVALID_SNAPPY: b("0x00000000"),
+  MESSAGE_DOMAIN_VALID_SNAPPY: b("0x01000000"),
+  // 2 subnets per node
+  SUBNETS_PER_NODE: 2,
 
   // Deneb
   // 2**7 (= 128)
@@ -150,6 +164,14 @@ export const chainConfig: ChainConfig = {
   // MAX_REQUEST_BLOCKS_DENEB * MAX_BLOBS_PER_BLOCK_ELECTRA
   MAX_REQUEST_BLOB_SIDECARS_ELECTRA: 1152,
 
+  // Gloas (EIP-8061)
+  // [customized] 2**4 (= 16)
+  CHURN_LIMIT_QUOTIENT_GLOAS: 16,
+  // [customized] 2**5 (= 32)
+  CONSOLIDATION_CHURN_LIMIT_QUOTIENT: 32,
+  // [customized] 2**7 * 10**9 (= 128,000,000,000)
+  MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS: 128000000000,
+
   // Fulu
   NUMBER_OF_CUSTODY_GROUPS: 128,
   DATA_COLUMN_SIDECAR_SUBNET_COUNT: 128,
@@ -160,6 +182,10 @@ export const chainConfig: ChainConfig = {
   BALANCE_PER_ADDITIONAL_CUSTODY_GROUP: 32000000000,
   // `2**12` (= 4096 epochs, ~18 days)
   MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: 4096,
+
+  // Gloas
+  // 2**7 (= 128) payloads
+  MAX_REQUEST_PAYLOADS: 128,
 
   // Blob Scheduling
   // ---------------------------------------------------------------

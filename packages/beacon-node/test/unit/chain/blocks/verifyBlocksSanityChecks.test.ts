@@ -1,6 +1,7 @@
 import {beforeEach, describe, expect, it} from "vitest";
+import {createChainForkConfig} from "@lodestar/config";
 import {config} from "@lodestar/config/default";
-import {IForkChoice, ProtoBlock} from "@lodestar/fork-choice";
+import {IForkChoice, PayloadStatus, ProtoBlock} from "@lodestar/fork-choice";
 import {computeStartSlotAtEpoch} from "@lodestar/state-transition";
 import {SignedBeaconBlock, Slot, ssz} from "@lodestar/types";
 import {toHex, toRootHex} from "@lodestar/utils";
@@ -25,44 +26,76 @@ describe("chain / blocks / verifyBlocksSanityChecks", () => {
     block.message.slot = currentSlot;
 
     forkChoice = getMockedBeaconChain().forkChoice;
-    forkChoice.getFinalizedCheckpoint.mockReturnValue({epoch: 0, root: Buffer.alloc(32), rootHex: ""});
+    forkChoice.getFinalizedCheckpoint.mockReturnValue({
+      epoch: 0,
+      root: Buffer.alloc(32),
+      rootHex: "",
+    });
     clock = new ClockStopped(currentSlot);
     modules = {config, forkChoice, clock, opts: {} as IChainOptions, blacklistedBlocks: new Map()};
     // On first call, parentRoot is known
-    forkChoice.getBlockHex.mockReturnValue({} as ProtoBlock);
+    forkChoice.getBlockHexDefaultStatus.mockReturnValue({} as ProtoBlock);
   });
 
   it("PARENT_UNKNOWN", () => {
-    forkChoice.getBlockHex.mockReturnValue(null);
-    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], {}), BlockErrorCode.PARENT_UNKNOWN);
+    forkChoice.getBlockHexDefaultStatus.mockReturnValue(null);
+    expectThrowsLodestarError(
+      () => verifyBlocksSanityChecks(modules, [block], null, {}),
+      BlockErrorCode.PARENT_UNKNOWN
+    );
+  });
+
+  it("PARENT_PAYLOAD_UNKNOWN", () => {
+    const gloasConfig = createChainForkConfig({
+      ...config,
+      FULU_FORK_EPOCH: 0,
+      GLOAS_FORK_EPOCH: 0,
+    });
+    const gloasBlock = ssz.gloas.SignedBeaconBlock.defaultValue();
+    gloasBlock.message.slot = currentSlot;
+
+    forkChoice.getBlockHexDefaultStatus.mockReturnValue({slot: 0} as ProtoBlock);
+    forkChoice.getBlockHexAndBlockHash.mockReturnValue(null);
+
+    expectThrowsLodestarError(
+      () => verifyBlocksSanityChecks({...modules, config: gloasConfig}, [gloasBlock as SignedBeaconBlock], null, {}),
+      BlockErrorCode.PARENT_PAYLOAD_UNKNOWN
+    );
   });
 
   it("GENESIS_BLOCK", () => {
     block.message.slot = 0;
-    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], {}), BlockErrorCode.GENESIS_BLOCK);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], null, {}), BlockErrorCode.GENESIS_BLOCK);
   });
 
   it("ALREADY_KNOWN", () => {
     forkChoice.hasBlockHex.mockReturnValue(true);
-    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], {}), BlockErrorCode.ALREADY_KNOWN);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], null, {}), BlockErrorCode.ALREADY_KNOWN);
   });
 
   it("WOULD_REVERT_FINALIZED_SLOT", () => {
-    forkChoice.getFinalizedCheckpoint.mockReturnValue({epoch: 5, root: Buffer.alloc(32), rootHex: ""});
+    forkChoice.getFinalizedCheckpoint.mockReturnValue({
+      epoch: 5,
+      root: Buffer.alloc(32),
+      rootHex: "",
+    });
     expectThrowsLodestarError(
-      () => verifyBlocksSanityChecks(modules, [block], {}),
+      () => verifyBlocksSanityChecks(modules, [block], null, {}),
       BlockErrorCode.WOULD_REVERT_FINALIZED_SLOT
     );
   });
 
   it("FUTURE_SLOT", () => {
     block.message.slot = currentSlot + 1;
-    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], {}), BlockErrorCode.FUTURE_SLOT);
+    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], null, {}), BlockErrorCode.FUTURE_SLOT);
   });
 
   it("BLACKLISTED_BLOCK", () => {
     modules.blacklistedBlocks.set(toRootHex(ssz.phase0.BeaconBlock.hashTreeRoot(block.message)), null);
-    expectThrowsLodestarError(() => verifyBlocksSanityChecks(modules, [block], {}), BlockErrorCode.BLACKLISTED_BLOCK);
+    expectThrowsLodestarError(
+      () => verifyBlocksSanityChecks(modules, [block], null, {}),
+      BlockErrorCode.BLACKLISTED_BLOCK
+    );
   });
 
   it("[OK, OK]", () => {
@@ -75,7 +108,9 @@ describe("chain / blocks / verifyBlocksSanityChecks", () => {
     modules.forkChoice = getForkChoice([blocks[0]]);
     clock.setSlot(3);
 
-    const {relevantBlocks, parentSlots} = verifyBlocksSanityChecks(modules, blocksToProcess, {ignoreIfKnown: true});
+    const {relevantBlocks, parentSlots} = verifyBlocksSanityChecks(modules, blocksToProcess, null, {
+      ignoreIfKnown: true,
+    });
 
     expect(relevantBlocks).toEqual([blocks[1], blocks[2]]);
     // Also check parentSlots
@@ -93,7 +128,7 @@ describe("chain / blocks / verifyBlocksSanityChecks", () => {
     modules.forkChoice = getForkChoice([blocks[0], blocks[1]]);
     clock.setSlot(4);
 
-    const {relevantBlocks} = verifyBlocksSanityChecks(modules, blocksToProcess, {
+    const {relevantBlocks} = verifyBlocksSanityChecks(modules, blocksToProcess, null, {
       ignoreIfKnown: true,
     });
 
@@ -113,7 +148,7 @@ describe("chain / blocks / verifyBlocksSanityChecks", () => {
     modules.forkChoice = getForkChoice([blocks[0], blocks[1]], finalizedEpoch);
     clock.setSlot(finalizedSlot + 4);
 
-    const {relevantBlocks} = verifyBlocksSanityChecks(modules, blocksToProcess, {
+    const {relevantBlocks} = verifyBlocksSanityChecks(modules, blocksToProcess, null, {
       ignoreIfFinalized: true,
     });
 
@@ -127,7 +162,8 @@ describe("chain / blocks / verifyBlocksSanityChecks", () => {
 function verifyBlocksSanityChecks(
   modules: Parameters<typeof verifyBlocksImportSanityChecks>[0],
   blocks: SignedBeaconBlock[],
-  opts: Parameters<typeof verifyBlocksImportSanityChecks>[2]
+  payloadEnvelopes: Parameters<typeof verifyBlocksImportSanityChecks>[2],
+  opts: Parameters<typeof verifyBlocksImportSanityChecks>[3]
 ): {relevantBlocks: SignedBeaconBlock[]; parentSlots: Slot[]; parentBlock: ProtoBlock | null} {
   const {relevantBlocks, parentSlots, parentBlock} = verifyBlocksImportSanityChecks(
     modules,
@@ -145,6 +181,7 @@ function verifyBlocksSanityChecks(
         seenTimestampSec: Math.floor(Date.now() / 1000),
       });
     }),
+    payloadEnvelopes,
     opts
   );
   return {
@@ -180,14 +217,14 @@ function getForkChoice(knownBlocks: SignedBeaconBlock[], finalizedEpoch = 0): IF
   }
 
   return {
-    getBlockHex(blockRoot) {
+    getBlockHexDefaultStatus(blockRoot) {
       return blocks.get(blockRoot) ?? null;
     },
     hasBlockHex(blockRoot) {
       return blocks.has(blockRoot);
     },
     getFinalizedCheckpoint() {
-      return {epoch: finalizedEpoch, root: Buffer.alloc(32), rootHex: ""};
+      return {epoch: finalizedEpoch, root: Buffer.alloc(32), rootHex: "", payloadStatus: PayloadStatus.FULL};
     },
   } as Partial<IForkChoice> as IForkChoice;
 }

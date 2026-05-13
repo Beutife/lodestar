@@ -1,4 +1,4 @@
-import {BitArray, CompositeViewDU} from "@chainsafe/ssz";
+import {BitArray} from "@chainsafe/ssz";
 import {routes} from "@lodestar/api";
 import {ChainForkConfig} from "@lodestar/config";
 import {
@@ -14,13 +14,14 @@ import {
   ForkPreGloas,
   ForkSeq,
   MIN_SYNC_COMMITTEE_PARTICIPANTS,
+  SLOTS_PER_EPOCH,
   SYNC_COMMITTEE_SIZE,
   forkPostAltair,
   highestFork,
   isForkPostElectra,
 } from "@lodestar/params";
 import {
-  CachedBeaconStateAltair,
+  type IBeaconStateViewAltair,
   computeStartSlotAtEpoch,
   computeSyncPeriodAtEpoch,
   computeSyncPeriodAtSlot,
@@ -45,21 +46,15 @@ import {
   ssz,
   sszTypesFor,
 } from "@lodestar/types";
-import {Logger, MapDef, pruneSetToMax, toRootHex} from "@lodestar/utils";
+import {Logger, MapDef, byteArrayEquals, pruneSetToMax, toRootHex} from "@lodestar/utils";
 import {ZERO_HASH} from "../../constants/index.js";
 import {IBeaconDb} from "../../db/index.js";
 import {NUM_WITNESS, NUM_WITNESS_ELECTRA} from "../../db/repositories/lightclientSyncCommitteeWitness.js";
 import {Metrics} from "../../metrics/index.js";
-import {byteArrayEquals} from "../../util/bytes.js";
+import {IClock} from "../../util/clock.js";
 import {ChainEventEmitter} from "../emitter.js";
 import {LightClientServerError, LightClientServerErrorCode} from "../errors/lightClientError.js";
-import {
-  getBlockBodyExecutionHeaderProof,
-  getCurrentSyncCommitteeBranch,
-  getFinalizedRootProof,
-  getNextSyncCommitteeBranch,
-  getSyncCommitteesWitness,
-} from "./proofs.js";
+import {getBlockBodyExecutionHeaderProof, getCurrentSyncCommitteeBranch, getNextSyncCommitteeBranch} from "./proofs.js";
 
 export type LightClientServerOpts = {
   disableLightClientServerOnImportBlockHead?: boolean;
@@ -86,10 +81,12 @@ export type SyncAttestedData = {
 
 type LightClientServerModules = {
   config: ChainForkConfig;
+  clock: IClock;
   db: IBeaconDb;
   metrics: Metrics | null;
   emitter: ChainEventEmitter;
   logger: Logger;
+  signal: AbortSignal;
 };
 
 const MAX_CACHED_FINALIZED_HEADERS = 3;
@@ -201,6 +198,8 @@ export class LightClientServer {
   private readonly metrics: Metrics | null;
   private readonly emitter: ChainEventEmitter;
   private readonly logger: Logger;
+  private readonly clock: IClock;
+  private readonly signal: AbortSignal;
   private readonly knownSyncCommittee = new MapDef<SyncPeriod, Set<DependentRootHex>>(() => new Set());
   private storedCurrentSyncCommittee = false;
 
@@ -221,12 +220,14 @@ export class LightClientServer {
     private readonly opts: LightClientServerOpts,
     modules: LightClientServerModules
   ) {
-    const {config, db, metrics, emitter, logger} = modules;
+    const {config, clock, db, metrics, emitter, logger, signal} = modules;
     this.config = config;
+    this.clock = clock;
     this.db = db;
     this.metrics = metrics;
     this.emitter = emitter;
     this.logger = logger;
+    this.signal = signal;
 
     this.zero = {
       // Assign the hightest fork's default value because it can always be typecasted down to correct fork
@@ -261,13 +262,21 @@ export class LightClientServer {
    */
   onImportBlockHead(
     block: BeaconBlock<ForkPostAltair>,
-    postState: CachedBeaconStateAltair,
+    postState: IBeaconStateViewAltair,
     parentBlockSlot: Slot
   ): void {
     // TEMP: To disable this functionality for fork_choice spec tests.
     // Since the tests have deep-reorgs attested data is not available often printing lots of error logs.
     // While this function is only called for head blocks, best to disable.
     if (this.opts.disableLightClientServerOnImportBlockHead) {
+      return;
+    }
+
+    // TODO GLOAS: Light client updates for gloas are not yet updated in the spec.
+    // The block body no longer contains execution payload, so `blockToLightClientHeader`
+    // cannot construct a header from a gloas block. Skip all light client processing
+    // for post-gloas blocks, revisit once there is a spec for it.
+    if (this.config.getForkSeq(block.slot) >= ForkSeq.gloas) {
       return;
     }
 
@@ -283,12 +292,16 @@ export class LightClientServer {
     const syncPeriod = computeSyncPeriodAtSlot(block.slot);
 
     this.onSyncAggregate(syncPeriod, block.body.syncAggregate, block.slot, signedBlockRoot).catch((e) => {
-      this.logger.error("Error onSyncAggregate", {}, e);
-      this.metrics?.lightclientServer.onSyncAggregate.inc({event: "error"});
+      if (!this.signal.aborted) {
+        this.logger.error("Error onSyncAggregate", {}, e);
+        this.metrics?.lightclientServer.onSyncAggregate.inc({event: "error"});
+      }
     });
 
     this.persistPostBlockImportData(block, postState, parentBlockSlot).catch((e) => {
-      this.logger.error("Error persistPostBlockImportData", {}, e);
+      if (!this.signal.aborted) {
+        this.logger.error("Error persistPostBlockImportData", {}, e);
+      }
     });
   }
 
@@ -344,7 +357,10 @@ export class LightClientServer {
     // Signature data
     const update = await this.db.bestLightClientUpdate.get(period);
     if (!update) {
-      throw Error(`No partialUpdate available for period ${period}`);
+      throw new LightClientServerError(
+        {code: LightClientServerErrorCode.RESOURCE_UNAVAILABLE},
+        `No partialUpdate available for period ${period}`
+      );
     }
     return update;
   }
@@ -392,7 +408,7 @@ export class LightClientServer {
 
   private async persistPostBlockImportData(
     block: BeaconBlock<ForkPostAltair>,
-    postState: CachedBeaconStateAltair,
+    postState: IBeaconStateViewAltair,
     parentBlockSlot: Slot
   ): Promise<void> {
     const blockSlot = block.slot;
@@ -402,7 +418,7 @@ export class LightClientServer {
     const blockRoot = ssz.phase0.BeaconBlockHeader.hashTreeRoot(header.beacon);
     const blockRootHex = toRootHex(blockRoot);
 
-    const syncCommitteeWitness = getSyncCommitteesWitness(fork, postState);
+    const syncCommitteeWitness = postState.getSyncCommitteesWitness();
 
     // Only store current sync committee once per run
     if (!this.storedCurrentSyncCommittee) {
@@ -452,7 +468,7 @@ export class LightClientServer {
             isFinalized: true,
             attestedHeader: header,
             blockRoot,
-            finalityBranch: getFinalizedRootProof(postState),
+            finalityBranch: postState.getFinalizedRootProof(),
             finalizedCheckpoint,
           }
         : {
@@ -533,12 +549,19 @@ export class LightClientServer {
     // Fork of LightClientOptimisticUpdate and LightClientFinalityUpdate is based off on attested header's fork
     const attestedFork = this.config.getForkName(attestedHeader.beacon.slot);
 
-    // Emit update
-    // Note: Always emit optimistic update even if we have emitted one with higher or equal attested_header.slot
-    this.emitter.emit(routes.events.EventType.lightClientOptimisticUpdate, {
-      version: attestedFork,
-      data: headerUpdate,
-    });
+    // Check if node is syncing / too far behind to avoid emitting stale light client updates
+    const isStaleLightClientUpdate = this.clock.currentSlot - signatureSlot > SLOTS_PER_EPOCH;
+
+    if (!isStaleLightClientUpdate) {
+      // Emit update
+      // Note: Always emit optimistic update even if we have emitted one with higher or equal attested_header.slot
+      this.emitter.emit(routes.events.EventType.lightClientOptimisticUpdate, {
+        version: attestedFork,
+        data: headerUpdate,
+      });
+    } else {
+      this.metrics?.lightclientServer.staleLightClientUpdates.inc();
+    }
 
     // Persist latest best update for getLatestHeadUpdate()
     // TODO: Once SyncAggregate are constructed from P2P too, count bits to decide "best"
@@ -569,11 +592,13 @@ export class LightClientServer {
         };
         this.metrics?.lightclientServer.onSyncAggregate.inc({event: "update_latest_finalized_update"});
 
-        // Note: Ignores gossip rule to always emit finality_update with higher finalized_header.slot, for simplicity
-        this.emitter.emit(routes.events.EventType.lightClientFinalityUpdate, {
-          version: attestedFork,
-          data: this.finalized,
-        });
+        if (!isStaleLightClientUpdate) {
+          // Note: Ignores gossip rule to always emit finality_update with higher finalized_header.slot, for simplicity
+          this.emitter.emit(routes.events.EventType.lightClientFinalityUpdate, {
+            version: attestedFork,
+            data: this.finalized,
+          });
+        }
       }
     }
 
@@ -701,13 +726,10 @@ export class LightClientServer {
     );
   }
 
-  private async storeSyncCommittee(
-    syncCommittee: CompositeViewDU<typeof ssz.altair.SyncCommittee>,
-    syncCommitteeRoot: Uint8Array
-  ): Promise<void> {
+  private async storeSyncCommittee(syncCommittee: altair.SyncCommittee, syncCommitteeRoot: Uint8Array): Promise<void> {
     const isKnown = await this.db.syncCommittee.has(syncCommitteeRoot);
     if (!isKnown) {
-      await this.db.syncCommittee.putBinary(syncCommitteeRoot, syncCommittee.serialize());
+      await this.db.syncCommittee.putBinary(syncCommitteeRoot, ssz.altair.SyncCommittee.serialize(syncCommittee));
     }
   }
 

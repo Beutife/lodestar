@@ -23,7 +23,6 @@ export type ChainArgs = {
   "chain.computeUnrealized"?: boolean;
   "chain.assertCorrectProgressiveBalances"?: boolean;
   "chain.maxSkipSlots"?: number;
-  "safe-slots-to-import-optimistically": number;
   emitPayloadAttributes?: boolean;
   broadcastValidationStrictness?: string;
   "chain.minSameMessageSignatureSetsToBatch"?: number;
@@ -31,10 +30,11 @@ export type ChainArgs = {
   "chain.archiveStateEpochFrequency": number;
   "chain.archiveDataEpochs"?: number;
   "chain.archiveMode": ArchiveMode;
-  "chain.nHistoricalStates"?: boolean;
   "chain.nHistoricalStatesFileDataStore"?: boolean;
+  "chain.nativeStateView"?: boolean;
   "chain.maxBlockStates"?: number;
   "chain.maxCPStateEpochsInMemory"?: number;
+  "chain.maxCPStateEpochsOnDisk"?: number;
 
   "chain.pruneHistory"?: boolean;
 };
@@ -62,7 +62,6 @@ export function parseArgs(args: ChainArgs): IBeaconNodeOptions["chain"] {
     computeUnrealized: args["chain.computeUnrealized"],
     assertCorrectProgressiveBalances: args["chain.assertCorrectProgressiveBalances"],
     maxSkipSlots: args["chain.maxSkipSlots"],
-    safeSlotsToImportOptimistically: args["safe-slots-to-import-optimistically"],
     emitPayloadAttributes: args.emitPayloadAttributes,
     broadcastValidationStrictness: args.broadcastValidationStrictness,
     minSameMessageSignatureSetsToBatch:
@@ -71,11 +70,12 @@ export function parseArgs(args: ChainArgs): IBeaconNodeOptions["chain"] {
     archiveStateEpochFrequency: args["chain.archiveStateEpochFrequency"],
     archiveDataEpochs: args["chain.archiveDataEpochs"],
     archiveMode: args["chain.archiveMode"] ?? defaultOptions.chain.archiveMode,
-    nHistoricalStates: args["chain.nHistoricalStates"] ?? defaultOptions.chain.nHistoricalStates,
     nHistoricalStatesFileDataStore:
       args["chain.nHistoricalStatesFileDataStore"] ?? defaultOptions.chain.nHistoricalStatesFileDataStore,
+    nativeStateView: args["chain.nativeStateView"] ?? defaultOptions.chain.nativeStateView,
     maxBlockStates: args["chain.maxBlockStates"] ?? defaultOptions.chain.maxBlockStates,
     maxCPStateEpochsInMemory: args["chain.maxCPStateEpochsInMemory"] ?? defaultOptions.chain.maxCPStateEpochsInMemory,
+    maxCPStateEpochsOnDisk: args["chain.maxCPStateEpochsOnDisk"] ?? defaultOptions.chain.maxCPStateEpochsOnDisk,
     pruneHistory: args["chain.pruneHistory"],
   };
 }
@@ -98,7 +98,9 @@ export const options: CliCommandOptions<ChainArgs> = {
 
   serveHistoricalState: {
     description:
-      "Enable regenerating finalized state to serve historical data. Fetching this data is expensive and may affect validator performance.",
+      "Regenerate finalized beacon states on demand and serve them via the REST API (e.g. `/eth/v2/debug/beacon/states/{state_id}`). \
+Does not backfill historical data, only states the node already has (since genesis sync or `--checkpointState`) can be regenerated. \
+Regeneration cost depends on `--chain.archiveStateEpochFrequency` and may affect validator performance.",
     type: "boolean",
     default: defaultOptions.chain.serveHistoricalState,
     group: "chain",
@@ -225,15 +227,6 @@ Will double processing times. Use only for debugging purposes.",
     group: "chain",
   },
 
-  "safe-slots-to-import-optimistically": {
-    hidden: true,
-    type: "number",
-    description:
-      "Slots from current (clock) slot till which its safe to import a block optimistically if the merge is not justified yet.",
-    default: defaultOptions.chain.safeSlotsToImportOptimistically,
-    group: "chain",
-  },
-
   "chain.archiveStateEpochFrequency": {
     description: "Minimum number of epochs between archived states",
     default: defaultOptions.chain.archiveStateEpochFrequency,
@@ -283,20 +276,19 @@ Will double processing times. Use only for debugging purposes.",
     group: "chain",
   },
 
-  "chain.nHistoricalStates": {
-    hidden: true,
-    description:
-      "Use the new FIFOBlockStateCache and PersistentCheckpointStateCache or not which make lodestar heap size bounded instead of unbounded as before",
-    type: "boolean",
-    default: defaultOptions.chain.nHistoricalStates,
-    group: "chain",
-  },
-
   "chain.nHistoricalStatesFileDataStore": {
     hidden: true,
     description: "Use fs to store checkpoint state for PersistentCheckpointStateCache or not",
     type: "boolean",
     default: defaultOptions.chain.nHistoricalStatesFileDataStore,
+    group: "chain",
+  },
+
+  "chain.nativeStateView": {
+    hidden: true,
+    description: "Use native (Zig) BeaconStateView instead of JS implementation",
+    type: "boolean",
+    default: defaultOptions.chain.nativeStateView,
     group: "chain",
   },
 
@@ -316,9 +308,19 @@ Will double processing times. Use only for debugging purposes.",
     group: "chain",
   },
 
-  "chain.pruneHistory": {
+  "chain.maxCPStateEpochsOnDisk": {
     hidden: true,
-    description: "Prune historical blocks and state",
+    description: "Max epochs to cache checkpoint states on disk, used for PersistentCheckpointStateCache",
+    type: "number",
+    default: defaultOptions.chain.maxCPStateEpochsOnDisk,
+    group: "chain",
+  },
+
+  "chain.pruneHistory": {
+    description:
+      "Continually prune finalized blocks older than `MIN_EPOCHS_FOR_BLOCK_REQUESTS` (33024 epochs / ~5 months on mainnet) and all archived states before the finalized epoch. \
+This is useful to minimize disk usage when the node does not need to serve historical data. \
+Initial pruning may be slow on first startup with an existing large database.",
     type: "boolean",
     default: defaultOptions.chain.pruneHistory,
     group: "chain",

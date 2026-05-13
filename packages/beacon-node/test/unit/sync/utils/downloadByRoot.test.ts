@@ -7,16 +7,19 @@ import {BlobSidecarValidationError} from "../../../../src/chain/errors/blobSidec
 import {DataColumnSidecarValidationError} from "../../../../src/chain/errors/dataColumnSidecarError.js";
 import {INetwork} from "../../../../src/network/index.js";
 import {PeerSyncMeta} from "../../../../src/network/peers/peersData.js";
+import {PendingBlockInputStatus} from "../../../../src/sync/types.js";
 import {
   DownloadByRootError,
   fetchAndValidateBlobs,
   fetchAndValidateBlock,
   fetchAndValidateColumns,
   fetchBlobsByRoot,
+  fetchByRoot,
   fetchColumnsByRoot,
 } from "../../../../src/sync/utils/downloadByRoot.js";
 import {ROOT_SIZE} from "../../../../src/util/sszBytes.js";
 import {
+  BlockWithColumnsTestSet,
   config,
   generateBlock,
   generateBlockWithBlobSidecars,
@@ -44,7 +47,7 @@ describe("downloadByRoot.ts", () => {
 
     it("should successfully fetch and validate block with matching root", async () => {
       network = {
-        sendBeaconBlocksByRoot: vi.fn(() => [{data: capellaBlock.block}]),
+        sendBeaconBlocksByRoot: vi.fn(() => [capellaBlock.block]),
       } as unknown as INetwork;
 
       const response = await fetchAndValidateBlock({
@@ -74,7 +77,7 @@ describe("downloadByRoot.ts", () => {
 
     it("should throw error when block root doesn't match requested root", async () => {
       network = {
-        sendBeaconBlocksByRoot: vi.fn(() => [{data: capellaBlock.block}]),
+        sendBeaconBlocksByRoot: vi.fn(() => [capellaBlock.block]),
       } as unknown as INetwork;
 
       const invalidRoot = randomBytes(ROOT_SIZE);
@@ -112,6 +115,7 @@ describe("downloadByRoot.ts", () => {
 
       const response = await fetchAndValidateBlobs({
         config,
+        chain: null,
         network,
         forkName,
         peerIdStr,
@@ -137,6 +141,7 @@ describe("downloadByRoot.ts", () => {
 
       const response = await fetchAndValidateBlobs({
         config,
+        chain: null,
         network,
         forkName,
         peerIdStr,
@@ -165,6 +170,7 @@ describe("downloadByRoot.ts", () => {
       await expect(
         fetchAndValidateBlobs({
           config,
+          chain: null,
           network,
           forkName,
           peerIdStr,
@@ -234,7 +240,7 @@ describe("downloadByRoot.ts", () => {
 
   describe("fetchAndValidateColumns", () => {
     const forkName = ForkName.fulu;
-    let fuluBlockWithColumns: ReturnType<typeof generateBlockWithColumnSidecars>;
+    let fuluBlockWithColumns: BlockWithColumnsTestSet<ForkName.fulu>;
     let missing: ColumnIndex[];
 
     beforeEach(() => {
@@ -262,6 +268,7 @@ describe("downloadByRoot.ts", () => {
 
       const response = await fetchAndValidateColumns({
         config,
+        chain: null,
         network,
         forkName,
         peerMeta,
@@ -303,6 +310,7 @@ describe("downloadByRoot.ts", () => {
       await expect(
         fetchAndValidateColumns({
           config,
+          chain: null,
           network,
           forkName,
           peerMeta,
@@ -314,8 +322,43 @@ describe("downloadByRoot.ts", () => {
     });
   });
 
+  describe("fetchByRoot", () => {
+    afterEach(() => {
+      vi.resetAllMocks();
+    });
+
+    it("does not fetch columns for bare-root gloas block sync", async () => {
+      const gloasBlockWithColumns = generateBlockWithColumnSidecars({forkName: ForkName.gloas});
+      const sendBeaconBlocksByRoot = vi.fn(() => Promise.resolve([gloasBlockWithColumns.block]));
+      const sendDataColumnSidecarsByRoot = vi.fn();
+      network = {
+        sendBeaconBlocksByRoot,
+        sendDataColumnSidecarsByRoot,
+      } as unknown as INetwork;
+
+      const response = await fetchByRoot({
+        config,
+        chain: null,
+        network,
+        peerMeta,
+        blockRoot: gloasBlockWithColumns.blockRoot,
+        cacheItem: {
+          status: PendingBlockInputStatus.pending,
+          rootHex: gloasBlockWithColumns.rootHex,
+          timeAddedSec: 0,
+          peerIdStrings: new Set(),
+        },
+      });
+
+      expect(sendBeaconBlocksByRoot).toHaveBeenCalledOnce();
+      expect(sendDataColumnSidecarsByRoot).not.toHaveBeenCalled();
+      expect(response.result.block).toEqual(gloasBlockWithColumns.block);
+      expect(response.result.columnSidecars).toBeUndefined();
+    });
+  });
+
   describe("fetchColumnsByRoot", () => {
-    let fuluBlockWithColumns: ReturnType<typeof generateBlockWithColumnSidecars>;
+    let fuluBlockWithColumns: BlockWithColumnsTestSet<ForkName.fulu>;
     beforeAll(() => {
       fuluBlockWithColumns = generateBlockWithColumnSidecars({forkName: ForkName.fulu});
       network = {

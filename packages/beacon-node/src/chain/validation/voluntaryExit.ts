@@ -1,6 +1,11 @@
-import {getVoluntaryExitSignatureSet, isValidVoluntaryExit} from "@lodestar/state-transition";
+import {VoluntaryExitValidity, getVoluntaryExitSignatureSet} from "@lodestar/state-transition";
 import {phase0} from "@lodestar/types";
-import {GossipAction, VoluntaryExitError, VoluntaryExitErrorCode} from "../errors/index.js";
+import {
+  GossipAction,
+  VoluntaryExitError,
+  VoluntaryExitErrorCode,
+  voluntaryExitValidityToErrorCode,
+} from "../errors/index.js";
 import {IBeaconChain} from "../index.js";
 import {RegenCaller} from "../regen/index.js";
 
@@ -43,13 +48,14 @@ async function validateVoluntaryExit(
 
   // [REJECT] All of the conditions within process_voluntary_exit pass validation.
   // verifySignature = false, verified in batch below
-  if (!isValidVoluntaryExit(chain.config.getForkSeq(state.slot), state, voluntaryExit, false)) {
+  const validity = state.getVoluntaryExitValidity(voluntaryExit, false);
+  if (validity !== VoluntaryExitValidity.valid) {
     throw new VoluntaryExitError(GossipAction.REJECT, {
-      code: VoluntaryExitErrorCode.INVALID,
+      code: voluntaryExitValidityToErrorCode(validity),
     });
   }
 
-  const signatureSet = getVoluntaryExitSignatureSet(state, voluntaryExit);
+  const signatureSet = getVoluntaryExitSignatureSet(chain.config, state, voluntaryExit);
   if (!(await chain.bls.verifySignatureSets([signatureSet], {batchable: true, priority: prioritizeBls}))) {
     throw new VoluntaryExitError(GossipAction.REJECT, {
       code: VoluntaryExitErrorCode.INVALID_SIGNATURE,

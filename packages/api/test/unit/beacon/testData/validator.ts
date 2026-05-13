@@ -35,11 +35,25 @@ export const testData: GenericServerTestCases<Endpoints> = {
       meta: {executionOptimistic: true, dependentRoot: ZERO_HASH_HEX},
     },
   },
+  getProposerDutiesV2: {
+    args: {epoch: 1000},
+    res: {
+      data: [{slot: 1, validatorIndex: 2, pubkey: new Uint8Array(48).fill(3)}],
+      meta: {executionOptimistic: true, dependentRoot: ZERO_HASH_HEX},
+    },
+  },
   getSyncCommitteeDuties: {
     args: {epoch: 1000, indices: [1, 2, 3]},
     res: {
       data: [{pubkey: new Uint8Array(48).fill(1), validatorIndex: 2, validatorSyncCommitteeIndices: [3]}],
       meta: {executionOptimistic: true},
+    },
+  },
+  getPtcDuties: {
+    args: {epoch: 1000, indices: [1, 2, 3]},
+    res: {
+      data: [{pubkey: new Uint8Array(48).fill(1), validatorIndex: 2, slot: 3}],
+      meta: {executionOptimistic: true, dependentRoot: ZERO_HASH_HEX},
     },
   },
   produceBlockV3: {
@@ -65,9 +79,39 @@ export const testData: GenericServerTestCases<Endpoints> = {
       },
     },
   },
+  produceBlockV4: {
+    args: {
+      slot: 32000,
+      randaoReveal,
+      graffiti,
+      skipRandaoVerification: true,
+      builderBoostFactor: 0n,
+      feeRecipient,
+      builderSelection: BuilderSelection.ExecutionAlways,
+      strictFeeRecipientCheck: true,
+    },
+    res: {
+      data: ssz.gloas.BeaconBlock.defaultValue(),
+      meta: {
+        version: ForkName.gloas,
+        consensusBlockValue: ssz.Wei.defaultValue(),
+      },
+    },
+  },
+  getExecutionPayloadEnvelope: {
+    args: {slot: 32000, beaconBlockRoot: ZERO_HASH},
+    res: {
+      data: ssz.gloas.ExecutionPayloadEnvelope.defaultValue(),
+      meta: {version: ForkName.gloas},
+    },
+  },
   produceAttestationData: {
     args: {committeeIndex: 2, slot: 32000},
     res: {data: ssz.phase0.AttestationData.defaultValue()},
+  },
+  producePayloadAttestationData: {
+    args: {slot: 32000},
+    res: {data: ssz.gloas.PayloadAttestationData.defaultValue(), meta: {version: ForkName.gloas}},
   },
   produceSyncCommitteeContribution: {
     args: {slot: 32000, subcommitteeIndex: 2, beaconBlockRoot: ZERO_HASH},

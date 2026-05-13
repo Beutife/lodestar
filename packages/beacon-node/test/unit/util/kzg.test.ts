@@ -62,7 +62,7 @@ describe("KZG", () => {
     expect(blobSidecars.length).toBe(2);
 
     // Full validation
-    await validateBlockBlobSidecars(slot, blockRoot, kzgCommitments.length, blobSidecars);
+    await validateBlockBlobSidecars(null, slot, blockRoot, kzgCommitments.length, blobSidecars);
 
     for (const blobSidecar of blobSidecars) {
       try {
@@ -93,7 +93,11 @@ describe("KZG", () => {
       signedBeaconBlock.message.body.blobKzgCommitments.push(commitment);
     }
 
-    const sidecars = getDataColumnSidecarsFromBlock(config, signedBeaconBlock, cellsAndProofs);
+    const sidecars = getDataColumnSidecarsFromBlock(
+      config,
+      signedBeaconBlock,
+      cellsAndProofs
+    ) as fulu.DataColumnSidecar[];
     const signedBlockHeader = signedBlockToSignedHeader(config, signedBeaconBlock);
 
     sidecars.forEach((sidecar, column) => {
@@ -144,6 +148,6 @@ describe("KZG", () => {
       throw new Error("Recovered sidecars should not be null");
     }
     expect(recoveredSidecars.length).toBe(NUMBER_OF_COLUMNS);
-    expect(ssz.fulu.DataColumnSidecars.equals(recoveredSidecars, sidecars)).toBeTruthy();
+    expect(ssz.fulu.DataColumnSidecars.equals(recoveredSidecars as fulu.DataColumnSidecar[], sidecars)).toBeTruthy();
   });
 });

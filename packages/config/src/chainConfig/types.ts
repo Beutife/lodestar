@@ -9,14 +9,17 @@ export type ChainConfig = {
    * Free-form short name of the network that this configuration applies to - known
    * canonical network names include:
    * * 'mainnet' - there can be only one
-   * * 'holesky' - testnet
+   * * 'hoodi' - testnet
    * Must match the regex: [a-z0-9\-]
    */
   CONFIG_NAME: string;
 
   // Transition
+  /** @deprecated All networks have completed the merge transition */
   TERMINAL_TOTAL_DIFFICULTY: bigint;
+  /** @deprecated All networks have completed the merge transition */
   TERMINAL_BLOCK_HASH: Uint8Array;
+  /** @deprecated All networks have completed the merge transition */
   TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: number;
 
   // Genesis
@@ -54,6 +57,7 @@ export type ChainConfig = {
   SLOT_DURATION_MS: number;
   SECONDS_PER_ETH1_BLOCK: number;
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY: number;
+  MIN_BUILDER_WITHDRAWABILITY_DELAY: number;
   SHARD_COMMITTEE_PERIOD: number;
   ETH1_FOLLOW_DISTANCE: number;
   PROPOSER_REORG_CUTOFF_BPS: number;
@@ -78,6 +82,9 @@ export type ChainConfig = {
   CHURN_LIMIT_QUOTIENT: number;
   MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT: number;
   MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA: number;
+  CHURN_LIMIT_QUOTIENT_GLOAS: number;
+  CONSOLIDATION_CHURN_LIMIT_QUOTIENT: number;
+  MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS: number;
 
   // Fork choice
   PROPOSER_SCORE_BOOST: number;
@@ -91,9 +98,16 @@ export type ChainConfig = {
   DEPOSIT_CONTRACT_ADDRESS: Uint8Array;
 
   // Networking
+  MAX_PAYLOAD_SIZE: number;
   MAX_REQUEST_BLOCKS: number;
-  MAX_REQUEST_BLOCKS_DENEB: number;
+  EPOCHS_PER_SUBNET_SUBSCRIPTION: number;
   MIN_EPOCHS_FOR_BLOCK_REQUESTS: number;
+  ATTESTATION_PROPAGATION_SLOT_RANGE: number;
+  MAXIMUM_GOSSIP_CLOCK_DISPARITY: number;
+  MESSAGE_DOMAIN_INVALID_SNAPPY: Uint8Array;
+  MESSAGE_DOMAIN_VALID_SNAPPY: Uint8Array;
+  SUBNETS_PER_NODE: number;
+  MAX_REQUEST_BLOCKS_DENEB: number;
   MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS: number;
   MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: number;
   BLOB_SIDECAR_SUBNET_COUNT: number;
@@ -111,6 +125,9 @@ export type ChainConfig = {
   CUSTODY_REQUIREMENT: number;
   VALIDATOR_CUSTODY_REQUIREMENT: number;
   BALANCE_PER_ADDITIONAL_CUSTODY_GROUP: number;
+
+  // Gloas
+  MAX_REQUEST_PAYLOADS: number;
 
   // Blob Scheduling
   BLOB_SCHEDULE: BlobSchedule;
@@ -159,6 +176,7 @@ export const chainConfigTypes: SpecTypes<ChainConfig> = {
   SLOT_DURATION_MS: "number",
   SECONDS_PER_ETH1_BLOCK: "number",
   MIN_VALIDATOR_WITHDRAWABILITY_DELAY: "number",
+  MIN_BUILDER_WITHDRAWABILITY_DELAY: "number",
   SHARD_COMMITTEE_PERIOD: "number",
   ETH1_FOLLOW_DISTANCE: "number",
   PROPOSER_REORG_CUTOFF_BPS: "number",
@@ -183,6 +201,9 @@ export const chainConfigTypes: SpecTypes<ChainConfig> = {
   CHURN_LIMIT_QUOTIENT: "number",
   MAX_PER_EPOCH_ACTIVATION_EXIT_CHURN_LIMIT: "number",
   MIN_PER_EPOCH_CHURN_LIMIT_ELECTRA: "number",
+  CHURN_LIMIT_QUOTIENT_GLOAS: "number",
+  CONSOLIDATION_CHURN_LIMIT_QUOTIENT: "number",
+  MAX_PER_EPOCH_ACTIVATION_CHURN_LIMIT_GLOAS: "number",
 
   // Fork choice
   PROPOSER_SCORE_BOOST: "number",
@@ -196,9 +217,16 @@ export const chainConfigTypes: SpecTypes<ChainConfig> = {
   DEPOSIT_CONTRACT_ADDRESS: "bytes",
 
   // Networking
+  MAX_PAYLOAD_SIZE: "number",
   MAX_REQUEST_BLOCKS: "number",
-  MAX_REQUEST_BLOCKS_DENEB: "number",
+  EPOCHS_PER_SUBNET_SUBSCRIPTION: "number",
   MIN_EPOCHS_FOR_BLOCK_REQUESTS: "number",
+  ATTESTATION_PROPAGATION_SLOT_RANGE: "number",
+  MAXIMUM_GOSSIP_CLOCK_DISPARITY: "number",
+  MESSAGE_DOMAIN_INVALID_SNAPPY: "bytes",
+  MESSAGE_DOMAIN_VALID_SNAPPY: "bytes",
+  SUBNETS_PER_NODE: "number",
+  MAX_REQUEST_BLOCKS_DENEB: "number",
   MIN_EPOCHS_FOR_BLOB_SIDECARS_REQUESTS: "number",
   MIN_EPOCHS_FOR_DATA_COLUMN_SIDECARS_REQUESTS: "number",
   BLOB_SIDECAR_SUBNET_COUNT: "number",
@@ -216,6 +244,9 @@ export const chainConfigTypes: SpecTypes<ChainConfig> = {
   CUSTODY_REQUIREMENT: "number",
   VALIDATOR_CUSTODY_REQUIREMENT: "number",
   BALANCE_PER_ADDITIONAL_CUSTODY_GROUP: "number",
+
+  // Gloas
+  MAX_REQUEST_PAYLOADS: "number",
 
   // Blob Scheduling
   BLOB_SCHEDULE: "blob_schedule",

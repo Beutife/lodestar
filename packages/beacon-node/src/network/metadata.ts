@@ -11,6 +11,7 @@ import {NetworkConfig} from "./networkConfig.js";
 
 export enum ENRKey {
   tcp = "tcp",
+  quic = "quic",
   eth2 = "eth2",
   attnets = "attnets",
   syncnets = "syncnets",
@@ -126,7 +127,7 @@ export class MetadataController {
    * 2. Network MUST call this method on fork transition.
    *    Current Clock implementation ensures no race conditions, epoch is correct if re-fetched
    */
-  updateEth2Field(epoch: Epoch): void {
+  updateEth2Field(epoch: Epoch): phase0.ENRForkID {
     const config = this.networkConfig.config;
     const enrForkId = getENRForkID(config, epoch);
     const {forkDigest, nextForkVersion, nextForkEpoch} = enrForkId;
@@ -143,6 +144,8 @@ export class MetadataController {
         : ssz.ForkDigest.defaultValue();
     this.onSetValue(ENRKey.nfd, nextForkDigest);
     this.logger.debug("Updated nfd field in ENR", {nextForkDigest: toHex(nextForkDigest)});
+
+    return enrForkId;
   }
 }
 
